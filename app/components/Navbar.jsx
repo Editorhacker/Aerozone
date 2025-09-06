@@ -1,739 +1,284 @@
 "use client";
-import React, { useState, useRef, useEffect } from "react";
-import * as XLSX from "xlsx";
-import { Chart, registerables } from "chart.js";
-Chart.register(...registerables);
 
-export default function ExcelTableConverter() {
-  // State for Dump Data (existing)
-  const [dumpFileName, setDumpFileName] = useState("No file selected");
-  const [dumpFile, setDumpFile] = useState(null);
+import Link from 'next/link';
+import React, { useState, useEffect, useMemo } from 'react';
 
-  const [jsonData, setJsonData] = useState([]);
-  const [filteredData, setFilteredData] = useState([]);
-  const [showOutput, setShowOutput] = useState(false);
-  const [successMsg, setSuccessMsg] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
+// Navigation items configuration
+const NAV_ITEMS = [
+  { href: '/', label: 'HOME', id: 'home' },
+  { href: '/event', label: 'EVENTS', id: 'events' },
+  { href: '/pdf-page', label: 'DATABASE', id: 'database' },
+  { href: '#contact', label: 'CONTACT', id: 'contact' }
+];
 
-  const dumpFileInputRef = useRef(null);
-  const pieChartRef = useRef(null);
-  const chartInstanceRef = useRef(null);
+// Particle Effect Component
+const ParticleEffect = React.memo(() => {
+  const [particles, setParticles] = useState([]);
 
-  // PROJECT VS INDENT QUANTITY CHART 
-  const onHandChartRef = useRef(null);
-  const onHandChartInstanceRef = useRef(null);
-
-  // PROJECT VS ORDER VALUE CHART
-  const orderValueChartRef = useRef(null);
-  const orderValueChartInstanceRef = useRef(null);
-
-  // PROJECT VS INVENTORY VALUE CHART
-  const inventoryValueChartRef = useRef(null);
-  const inventoryValueChartInstanceRef = useRef(null);
-
-  const [generalSearch, setGeneralSearch] = useState("");
-  const [projectFilter, setProjectFilter] = useState("");
-  const [itemCodeFilter, setItemCodeFilter] = useState("");
-  const [itemDescFilter, setItemDescFilter] = useState("");
-  const [itemCodeSort, setItemCodeSort] = useState('none'); // 'none', 'asc', 'desc'
-
-  // Handle Dump Data file selection
-  const handleDumpFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setDumpFileName(file.name);
-      setDumpFile(file);
-      setShowOutput(false);
-    } else {
-      setDumpFileName("No file selected");
-      setDumpFile(null);
-    }
-  };
-
-  // Trigger Dump Data file input click
-  const triggerDumpFileInput = () => {
-    dumpFileInputRef.current.click();
-  };
-
-  // Convert Dump Data Excel to JSON
-  const handleDumpConvert = () => {
-    if (!dumpFile) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: "array" });
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const excelData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        const transformedData = transformData(excelData);
-        setJsonData(transformedData);
-        setFilteredData(transformedData);
-        setShowOutput(true);
-        showNotification("success", "Dump Data conversion successful!");
-      } catch (err) {
-        showNotification("error", `Failed to process Dump Data: ${err.message}`);
-      }
-    };
-    reader.onerror = () => showNotification("error", "Error reading Dump Data file");
-    reader.readAsArrayBuffer(dumpFile);
-  };
-
-
-  // Transform Excel rows into objects
-  const transformData = (data) => {
-    const rows = data.slice(1);
-    return rows.map((row) => {
-      while (row.length < 25) row.push("");
-      const parsedDate = parseDate(row[14]);
-      const formattedDate = parsedDate ? formatDateToDDMMMYYYY(parsedDate) : "";
-      let deliveryDate = "";
-      if (parsedDate) {
-        const delivery = new Date(parsedDate);
-        delivery.setDate(delivery.getDate() + 31);
-        deliveryDate = formatDateToDDMMMYYYY(delivery);
-      }
-      return {
-        "Project Code": row[7] || "",
-        ItemCode: row[8] || "",
-        ItemShortDescription: row[10] || "", // instead of 10 use 9
-        "OrderedLine Quantity": row[19] || 0, //instead of 19 use 18
-        "Inventory Quantity": row[42] || 0,       // New column from column AQ 
-        UOM: row[16] || "", // instead of 16 use 15
-        OrderLineValue: row[25] || "", // instead of 25 use 24
-        "Inventory Value": calculateInventoryValue(row[25], row[19], row[42]), // ✅ New column
-        Currency: row[23] || "", // instead of 23 use 22
-        Date: formattedDate,
-        Delivery: deliveryDate,
-        "Supplier Name": row[3] || "", // New column from column D
-        "PO.No": row[4] || "",         // New column from column E
-
-      };
-    });
-  };
-
-  const calculateInventoryValue = (orderLineValue, orderedQty, onHand) => {
-  const val = parseFloat(orderLineValue) || 0;
-  const qty = parseFloat(orderedQty) || 0;
-  const hand = parseFloat(onHand) || 0;
-  if (qty === 0) return 0; // avoid division by zero
-  return ((val / qty) * hand).toFixed(2); // keep 2 decimals
-};
-
-
-  // Date helpers
-  const parseDate = (dateValue) => {
-    if (!dateValue) return null;
-    if (typeof dateValue === "number") return new Date((dateValue - 25569) * 86400 * 1000);
-    if (typeof dateValue === "string") return new Date(dateValue);
-    if (dateValue instanceof Date) return dateValue;
-    return null;
-  };
-
-  const formatDateToDDMMMYYYY = (date) => {
-    if (!date) return "";
-    const day = date.getDate().toString().padStart(2, "0");
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const month = monthNames[date.getMonth()];
-    const year = date.getFullYear();
-    return `${day}-${month}-${year}`;
-  };
-
-  // Generate Pie Chart
-  const prepareChart = (data) => {
-    if (!pieChartRef.current) return;
-    const projectData = {};
-    data.forEach((row) => {
-      const project = row["Project Code"] || "Unknown";
-      const qty = parseFloat(row["OrderedLine Quantity"]) || 0;
-      projectData[project] = (projectData[project] || 0) + qty;
-    });
-    const labels = Object.keys(projectData);
-    const values = Object.values(projectData);
-    const colors = generateColors(labels.length);
-    if (chartInstanceRef.current) chartInstanceRef.current.destroy();
-    const ctx = pieChartRef.current.getContext("2d");
-    chartInstanceRef.current = new Chart(ctx, {
-      type: "pie",
-      data: {
-        labels,
-        datasets: [{ data: values, backgroundColor: colors, borderColor: "#fff", borderWidth: 2 }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          },
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                const val = context.raw || 0;
-                const percentage = Math.round((val / total) * 100);
-                return `${context.label}: ${val} (${percentage}%)`;
-              },
-            },
-            backgroundColor: 'rgba(15, 23, 42, 0.9)',
-            titleColor: '#93c5fd',
-            bodyColor: '#e0e7ff',
-            borderColor: '#1e40af',
-            borderWidth: 1
-          },
-        },
-      },
-    });
-  };
-
-  // PREPARE PROJECT VS INDENT QUANTITY CHART
-  const prepareOnHandChart = (data) => {
-    if (!onHandChartRef.current) return;
-    const projectData = {};
-    data.forEach((row) => {
-      const project = row["Project Code"] || "Unknown";
-      const qty = parseFloat(row["Inventory Quantity"]) || 0;
-      projectData[project] = (projectData[project] || 0) + qty;
-    });
-    const labels = Object.keys(projectData);
-    const values = Object.values(projectData);
-    const colors = generateColors(labels.length);
-
-    if (onHandChartInstanceRef.current) onHandChartInstanceRef.current.destroy();
-    const ctx = onHandChartRef.current.getContext("2d");
-    onHandChartInstanceRef.current = new Chart(ctx, {
-      type: "pie",
-      data: {
-        labels,
-        datasets: [{ data: values, backgroundColor: colors, borderColor: "#fff", borderWidth: 2 }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          },
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                const val = context.raw || 0;
-                const percentage = Math.round((val / total) * 100);
-                return `${context.label}: ${val} (${percentage}%)`;
-              },
-            },
-            backgroundColor: 'rgba(15, 23, 42, 0.9)',
-            titleColor: '#93c5fd',
-            bodyColor: '#e0e7ff',
-            borderColor: '#1e40af',
-            borderWidth: 1
-          },
-        },
-      },
-    });
-  };
-
-  // PREPARE PROJECT VS ORDER VALUE CHART
- const prepareOrderValueChart = (data) => {
-  if (!orderValueChartRef.current) return;
-  const projectData = {};
-  data.forEach((row) => {
-    const project = row["Project Code"] || "Unknown";
-    const qty = parseFloat(row["OrderLineValue"]) || 0; 
-    projectData[project] = (projectData[project] || 0) + qty;
-  });
-  const labels = Object.keys(projectData);
-  const values = Object.values(projectData);
-  const colors = generateColors(labels.length);
-
-  if (orderValueChartInstanceRef.current) orderValueChartInstanceRef.current.destroy();
-  const ctx = orderValueChartRef.current.getContext("2d"); 
-  orderValueChartInstanceRef.current = new Chart(ctx, {
-    type: "pie",
-    data: {
-      labels,
-      datasets: [{ data: values, backgroundColor: colors, borderColor: "#fff", borderWidth: 2 }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: false
-        },
-        tooltip: {
-          callbacks: {
-            label: (context) => {
-              const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const val = context.raw || 0;
-              const percentage = Math.round((val / total) * 100);
-              return `${context.label}: ${val} (${percentage}%)`;
-            },
-          },
-          backgroundColor: "rgba(15, 23, 42, 0.9)",
-          titleColor: "#93c5fd",
-          bodyColor: "#e0e7ff",
-          borderColor: "#1e40af",
-          borderWidth: 1,
-        },
-      },
-    },
-  });
-};
-
-  // PREPARE PROJECT VS INVENTORY VALUE CHART
-  const prepareInventoryValueChart = (data) => {
-    if (!inventoryValueChartRef.current)return;
-    const projectData ={};
-    data.forEach((row) => {
-      const project = row["Project Code"] || "Unknown";
-      const qty = parseFloat(row["Inventory Value"]) || 0;
-      projectData[project] = (projectData[project] || 0) + qty;
-    });
-    const labels = Object.keys(projectData);
-    const values = Object.values(projectData);
-    const colors = generateColors(labels.length);
-    if (inventoryValueChartInstanceRef.current) inventoryValueChartInstanceRef.current.destroy();
-    const ctx = inventoryValueChartRef.current.getContext("2d");
-    inventoryValueChartInstanceRef.current = new Chart(ctx, {
-      type: "pie",
-      data: {
-        labels,
-        datasets: [{ data: values, backgroundColor: colors, borderColor: "#fff", borderWidth: 2 }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            display: false
-          },
-          tooltip: {
-            callbacks: {
-              label: (context) => {
-                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                const val = context.raw || 0;
-                const percentage = Math.round((val / total) * 100);
-                return `${context.label}: ${val} (${percentage}%)`;
-              },
-            },
-            backgroundColor: 'rgba(15, 23, 42, 0.9)',
-            titleColor: '#93c5fd',
-            bodyColor: '#e0e7ff',
-            borderColor: '#1e40af',
-            borderWidth: 1
-          },
-        },
-      },
-    });
-  };
-
-
-  const generateColors = (count) => {
-    // Sci-fi color palette
-    const baseColors = [
-      "#00d4ff", // Cyan
-      "#7c3aed", // Purple
-      "#ef4444", // Red
-      "#10b981", // Green
-      "#f59e0b", // Amber
-      "#8b5cf6", // Violet
-      "#ec4899", // Pink
-      "#06b6d4", // Light Blue
-      "#f97316", // Orange
-      "#6366f1"  // Indigo
-    ];
-    while (baseColors.length < count) {
-      const r = Math.floor(Math.random() * 200);
-      const g = Math.floor(Math.random() * 200);
-      const b = Math.floor(Math.random() * 200);
-      baseColors.push(`rgb(${r},${g},${b})`);
-    }
-    return baseColors.slice(0, count);
-  };
-
-  // Copy table
-  const copyTable = () => {
-    if (!filteredData.length) return;
-    const headers = Object.keys(filteredData[0]);
-    let text = headers.join("\t") + "\n";
-    filteredData.forEach((row) => {
-      text += headers.map((h) => row[h]).join("\t") + "\n";
-    });
-    navigator.clipboard.writeText(text)
-      .then(() => showNotification("success", "Table copied to clipboard!"))
-      .catch(() => showNotification("error", "Failed to copy"));
-  };
-
-  const showNotification = (type, message) => {
-    if (type === "success") {
-      setSuccessMsg(message);
-      setTimeout(() => setSuccessMsg(""), 3000);
-    } else {
-      setErrorMsg(message);
-      setTimeout(() => setErrorMsg(""), 5000);
-    }
-  };
-
-  // Apply filters
-  const applyFilters = () => {
-    let filtered = [...jsonData];
-    if (generalSearch) {
-      const term = generalSearch.toLowerCase();
-      filtered = filtered.filter((row) =>
-        Object.values(row).some((v) => v.toString().toLowerCase().includes(term))
-      );
-    }
-    if (projectFilter) filtered = filtered.filter((row) => row["Project Code"] === projectFilter);
-    if (itemCodeFilter) filtered = filtered.filter((row) => row.ItemCode.slice(9) === itemCodeFilter);
-    if (itemDescFilter) filtered = filtered.filter((row) => row.ItemShortDescription === itemDescFilter);
-
-    // Apply sorting if needed
-    if (itemCodeSort !== 'none') {
-      filtered.sort((a, b) => {
-        const codeA = a.ItemCode.slice(9);
-        const codeB = b.ItemCode.slice(9);
-        if (itemCodeSort === 'asc') {
-          return codeA.localeCompare(codeB);
-        } else {
-          return codeB.localeCompare(codeA);
-        }
-      });
-    }
-
-    setFilteredData(filtered);
-  };
-
-  // Handle sorting toggle
-  const handleSort = () => {
-    let newSortOrder;
-    if (itemCodeSort === 'none') newSortOrder = 'asc';
-    else if (itemCodeSort === 'asc') newSortOrder = 'desc';
-    else newSortOrder = 'none';
-
-    setItemCodeSort(newSortOrder);
-
-    // Apply sorting immediately
-    let sorted = [...filteredData];
-    if (newSortOrder !== 'none') {
-      sorted.sort((a, b) => {
-        const codeA = a.ItemCode.slice(9);
-        const codeB = b.ItemCode.slice(9);
-        if (newSortOrder === 'asc') {
-          return codeA.localeCompare(codeB);
-        } else {
-          return codeB.localeCompare(codeA);
-        }
-      });
-    }
-    setFilteredData(sorted);
-  };
-
-  // Update chart whenever filteredData changes
   useEffect(() => {
-    if (showOutput) prepareChart(filteredData);
-    prepareOnHandChart(filteredData);
-    prepareOrderValueChart(filteredData);
-    prepareInventoryValueChart(filteredData);
-  }, [filteredData, showOutput]);
+    // Generate particles only on client-side to avoid hydration mismatch
+    const newParticles = Array.from({ length: 5 }, (_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      delay: Math.random() * 3,
+      duration: 3 + Math.random() * 2
+    }));
+    setParticles(newParticles);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-gray-100 py-8 px-2">
-      {/* Sci-Fi Header with Background */}
-      <div className="bg-gradient-to-r from-cyan-900 to-indigo-900 text-white py-10 px-6 mb-10 shadow-2xl border-b border-cyan-500/30 relative overflow-hidden">
-        {/* Sci-Fi decorative elements */}
-        <div className="absolute top-0 left-0 w-full h-full">
-          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-cyan-500 rounded-full mix-blend-soft-light filter blur-3xl opacity-20 animate-pulse-slow"></div>
-          <div className="absolute bottom-1/3 right-1/4 w-48 h-48 bg-indigo-500 rounded-full mix-blend-soft-light filter blur-3xl opacity-20 animate-pulse-slow"></div>
-        </div>
+    <div className="absolute top-0 left-0 w-full h-24 pointer-events-none overflow-hidden">
+      {particles.map((particle) => (
+        <div
+          key={particle.id}
+          className="absolute w-1 h-1 bg-cyan-400 rounded-full opacity-30 animate-float"
+          style={{
+            left: `${particle.left}%`,
+            animationDelay: `${particle.delay}s`,
+            animationDuration: `${particle.duration}s`
+          }}
+        />
+      ))}
+    </div>
+  );
+});
 
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="flex items-center mb-2">
-            <div className="h-1 w-10 bg-cyan-400 mr-3"></div>
-            <h1 className="text-4xl font-bold tracking-tight">DATA ANALYZER</h1>
-          </div>
-          <p className="text-cyan-200 text-lg">Advanced Excel Data Processing & Visualization System</p>
+ParticleEffect.displayName = 'ParticleEffect';
+
+// Logo Component
+const NavbarLogo = React.memo(() => (
+  <Link href="/" className="group">
+    <div className="flex items-center space-x-3">
+      <div className="relative">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 flex items-center justify-center group-hover:animate-pulse">
+          <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L13.09 8.26L22 9L13.09 15.74L12 22L10.91 15.74L2 9L10.91 8.26L12 2Z"/>
+          </svg>
         </div>
+        <div className="absolute inset-0 rounded-full bg-cyan-400/20 animate-ping" />
       </div>
-
-      <div className="max-w-7xl justify-center mx-2">
-        {/* Upload Cards Section */}
-        <div className=" gap-8 mb-10">
-          {/* Dump Data Upload Card */}
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-cyan-500/20 p-4 shadow-xl hover:shadow-cyan-500/10 transition-all duration-300">
-            <div className="flex items-center mb-4">
-              <div className="h-8 w-1 bg-cyan-400 mr-3"></div>
-              <h2 className="text-xl font-bold text-cyan-100">DUMP DATA</h2>
-            </div>
-            <p className="text-gray-400 mb-6">Upload existing data for table visualization</p>
-
-            <div className="flex flex-col items-center">
-              {/* Hidden file input */}
-              <input
-                type="file"
-                ref={dumpFileInputRef}
-                accept=".xlsx, .xls, .csv"
-                onChange={handleDumpFileChange}
-                className="hidden"
-              />
-
-              {/* File selection button */}
-              <button
-                onClick={triggerDumpFileInput}
-                className="w-full max-w-xs bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white py-3 px-6 rounded-lg mb-4 transition duration-300 flex items-center justify-center shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-                SELECT DUMP DATA
-              </button>
-
-              <div className="text-sm text-cyan-300 mb-4 font-mono">{dumpFileName}</div>
-
-              <button
-                onClick={handleDumpConvert}
-                disabled={!dumpFile}
-                className="w-full max-w-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white py-3 px-6 rounded-lg transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40"
-              >
-                PROCESS DATA
-              </button>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Notification Messages */}
-        {successMsg && (
-          <div className="mb-6 bg-emerald-900/50 border border-emerald-500/30 text-emerald-200 p-4 rounded-lg flex items-center max-w-2xl mx-auto backdrop-blur-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-emerald-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
-            {successMsg}
-          </div>
-        )}
-        {errorMsg && (
-          <div className="mb-6 bg-red-900/50 border border-red-500/30 text-red-200 p-4 rounded-lg flex items-center max-w-2xl mx-auto backdrop-blur-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-3 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            {errorMsg}
-          </div>
-        )}
-
-        {/* Output Section */}
-        {showOutput && (
-          <div className="bg-gray-800/50  backdrop-blur-sm rounded-xl border border-gray-700/50 p-2 mb-8 shadow-xl">
-            {/* Filters */}
-            <div className="mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-              <div className="flex items-center mb-3">
-                <div className="h-5 w-1 bg-cyan-400 mr-2"></div>
-                <h2 className="text-lg font-semibold text-cyan-100">DATA FILTERS</h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-5 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Search</label>
-                  <input
-                    type="text"
-                    placeholder="General search..."
-                    value={generalSearch}
-                    onChange={(e) => setGeneralSearch(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Project</label>
-                  <select
-                    value={projectFilter}
-                    onChange={(e) => setProjectFilter(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                  >
-                    <option value="">All Projects</option>
-                    {[...new Set(jsonData.map(row => row["Project Code"]))].map((proj, idx) => (
-                      <option key={idx} value={proj}>{proj}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Item Code</label>
-                  <select
-                    value={itemCodeFilter}
-                    onChange={(e) => setItemCodeFilter(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                  >
-                    <option value="">All Codes</option>
-                    {[...new Set(jsonData.map(row => row.ItemCode?.slice(9)))].map((code, idx) => (
-                      <option key={idx} value={code}>{code}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Description</label>
-                  <select
-                    value={itemDescFilter}
-                    onChange={(e) => setItemDescFilter(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                  >
-                    <option value="">All Descriptions</option>
-                    {[...new Set(jsonData.map(row => row.ItemShortDescription))].map((desc, idx) => (
-                      <option key={idx} value={desc}>{desc}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    onClick={applyFilters}
-                    className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white py-2 rounded-lg transition duration-300 shadow-lg shadow-cyan-500/20"
-                  >
-                    APPLY FILTERS
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Pie Chart */}
-            <div className="flex justify-between ">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3 min-h-full">
-              <div className="mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                <div className="flex items-center mb-3">
-                  <div className="h-5 w-1 bg-purple-400 mr-2"></div>
-                  <h2 className="text-lg font-semibold text-purple-100">PROJECT DISTRIBUTION</h2>
-                </div>
-                <div className="h-[10vw] flex justify-center">
-                  <canvas ref={pieChartRef}></canvas>
-                </div>
-              </div>
-              {/* Project vs Indent Quantity Pie Chart */}
-              <div className="mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                <div className="flex items-center mb-3">
-                  <div className="h-5 w-1 bg-emerald-400 mr-2"></div>
-                  <h2 className="text-lg font-semibold text-emerald-100">Inventory Quantity DISTRIBUTION</h2>
-                </div>
-                <div className="h-[10vw] flex justify-center">
-                  <canvas ref={onHandChartRef}></canvas>
-                </div>
-              </div>
-              {/* Project vs Order Line Value Pie Chart */}
-              <div className="mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                <div className="flex items-center mb-3">
-                  <div className="h-5 w-1 bg-red-400 mr-2"></div>
-                  <h2 className="text-lg font-semibold text-emerald-100">INDENT QUANTITY DISTRIBUTION</h2>
-                </div>
-                <div className="h-[10vw] flex justify-center">
-                  <canvas ref={orderValueChartRef}></canvas>
-                </div>
-              </div>
-
-              {/* Project vs Inventory Value Pie Chart */}
-              <div className="mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                <div className="flex items-center mb-3">
-                  <div className="h-5 w-1 bg-red-400 mr-2"></div>
-                  <h2 className="text-lg font-semibold text-emerald-100">INVENTORY VALUE DISTRIBUTION</h2>
-                </div>
-                <div className="h-[10vw] flex justify-center">
-                  <canvas ref={inventoryValueChartRef}></canvas>
-                </div>
-              </div>
-
-            </div>
-
-            </div>
-
-
-            {/* Table */}
-            <div className="bg-gray-900/50 p-4 table-auto rounded-lg border border-gray-700">
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center">
-                  <div className="h-5 w-1 bg-indigo-400 mr-2"></div>
-                  <h2 className="text-lg font-semibold text-indigo-100">DATA TABLE</h2>
-                </div>
-
-                <button
-                  onClick={copyTable}
-                  className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white py-2 px-4 rounded-lg text-sm flex items-center shadow-lg shadow-indigo-500/20 transition duration-300"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-                    <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-                  </svg>
-                  COPY TABLE
-                </button>
-              </div>
-
-              <div className="border border-gray-700  rounded-lg shadow overflow-auto scrollbar-hide max-h-96">
-                <table className="min-w-full table-auto  bg-gray-800">
-                  <thead className="bg-gradient-to-r from-cyan-800 to-indigo-800 text-white sticky top-0 z-10">
-                    <tr>
-                      {filteredData[0] &&
-                        Object.keys(filteredData[0]).map((key) => (
-                          <th
-                            key={key}
-                            className="py-2 px-2 text-left text-xs font-bold uppercase tracking-wider border-r border-cyan-700 last:border-r-0 whitespace-nowrap"
-                          >
-                            {key === "ItemCode" ? (
-                              <div className="flex items-center">
-                                <span>{key}</span>
-                                <button
-                                  onClick={handleSort}
-                                  className="ml-2 bg-cyan-500 hover:bg-cyan-400 text-gray-900 font-bold rounded px-2 py-0.5 text-xs shadow transition-colors duration-300"
-                                  title="Sort by Item Code"
-                                >
-                                  {itemCodeSort === 'asc' ? '↑' : itemCodeSort === 'desc' ? '↓' : '↕'}
-                                </button>
-                              </div>
-                            ) : key}
-                          </th>
-                        ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y  divide-gray-700">
-                    {filteredData.length ? (
-                      filteredData.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-gray-700/50 transition-colors duration-200">
-                          {Object.keys(row).map((key) => (
-                            <td
-                              key={key}
-                              className="py-2 px-2 text-xs text-gray-300 border-r border-gray-700 last:border-r-0 whitespace-nowrap"
-                            >
-                              {key === "ItemCode" ? row[key]?.slice(9) : row[key]}
-                            </td>
-                          ))}
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="100%" className="py-4 px-4 text-center text-gray-400 bg-gray-800/50">
-                          <div className="flex flex-col items-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <p className="text-sm font-medium">NO DATA AVAILABLE</p>
-                            <p className="text-xs mt-1">Try adjusting your filters</p>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
+      
+      <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-500 group-hover:from-white group-hover:via-cyan-300 group-hover:to-blue-400 transition-all duration-300">
+        AEROSPACE
+      </h1>
+      
+      <div className="hidden lg:block">
+        <span className="text-xs text-cyan-300/70 font-mono tracking-wider">
+          [SYS_ONLINE]
+        </span>
       </div>
+    </div>
+  </Link>
+));
 
-      {/* Add custom animation for sci-fi effect */}
-      <style jsx global>{`
-        @keyframes pulse-slow {
-          0%, 100% { opacity: 0.2; }
-          50% { opacity: 0.3; }
+NavbarLogo.displayName = 'NavbarLogo';
+
+// Navigation Links Component
+const NavigationLinks = React.memo(() => (
+  <nav className="hidden md:flex items-center space-x-1" role="navigation" aria-label="Main navigation">
+    {NAV_ITEMS.map((item) => (
+      <Link 
+        key={item.id}
+        href={item.href} 
+        className="relative group px-6 py-3 mx-1 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-opacity-50 rounded"
+      >
+        {/* Hexagonal background */}
+        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-all duration-300">
+          <svg viewBox="0 0 100 50" className="w-full h-full">
+            <polygon 
+              points="15,5 85,5 95,25 85,45 15,45 5,25" 
+              fill="rgba(34, 211, 238, 0.1)"
+              stroke="currentColor"
+              strokeWidth="1"
+              className="text-cyan-400"
+            />
+          </svg>
+        </div>
+        
+        <span className="relative z-10 text-sm font-semibold tracking-wider text-gray-300 group-hover:text-white transition-all duration-300 font-mono">
+          {item.label}
+        </span>
+        
+        {/* Animated underline */}
+        <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-0 h-0.5 bg-gradient-to-r from-cyan-400 to-blue-500 group-hover:w-4/5 transition-all duration-300" />
+        
+        {/* Side glow effects */}
+        <div className="absolute top-1/2 -left-2 transform -translate-y-1/2 w-1 h-0 bg-cyan-400 group-hover:h-6 transition-all duration-300 rounded-full" />
+        <div className="absolute top-1/2 -right-2 transform -translate-y-1/2 w-1 h-0 bg-cyan-400 group-hover:h-6 transition-all duration-300 rounded-full" />
+      </Link>
+    ))}
+  </nav>
+));
+
+NavigationLinks.displayName = 'NavigationLinks';
+
+// Mobile Menu Button Component
+const MobileMenuButton = React.memo(({ isOpen, onToggle }) => (
+  <button 
+    className="md:hidden relative group p-2 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-opacity-50 rounded"
+    onClick={onToggle}
+    aria-label="Toggle mobile menu"
+    aria-expanded={isOpen}
+  >
+    <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-500/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300" />
+    <svg className="relative z-10 w-6 h-6 text-cyan-400 group-hover:text-white transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+    {/* Corner accents */}
+    <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-cyan-400 group-hover:w-3 group-hover:h-3 transition-all duration-300" />
+    <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-cyan-400 group-hover:w-3 group-hover:h-3 transition-all duration-300" />
+  </button>
+));
+
+MobileMenuButton.displayName = 'MobileMenuButton';
+
+// Mobile Menu Component
+const MobileMenu = React.memo(({ isOpen }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="md:hidden absolute top-full left-0 w-full bg-gray-900/95 backdrop-blur-xl border-b-2 border-cyan-400/30 shadow-2xl z-50">
+      <nav className="px-4 py-4 space-y-2" role="navigation" aria-label="Mobile navigation">
+        {NAV_ITEMS.map((item) => (
+          <Link
+            key={item.id}
+            href={item.href}
+            className="block px-4 py-3 text-gray-300 hover:text-white hover:bg-cyan-400/10 rounded transition-all duration-300 font-mono text-sm tracking-wider"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+    </div>
+  );
+});
+
+MobileMenu.displayName = 'MobileMenu';
+
+// Background Effects Component
+const BackgroundEffects = React.memo(({ isVisible }) => (
+  <>
+    {/* Sci-fi ambient glow effect - only when navbar is visible */}
+    <div className={`absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-cyan-500/5 via-blue-500/3 to-transparent pointer-events-none transition-opacity duration-500 ${
+      isVisible ? 'opacity-100' : 'opacity-0'
+    }`} />
+    
+    {/* Holographic border effect - only when navbar is visible */}
+    <div className={`absolute inset-0 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 blur-sm transition-opacity duration-500 ${
+      isVisible ? 'opacity-100' : 'opacity-0'
+    }`} />
+    
+    {/* Animated circuit pattern background - only when navbar is visible */}
+    <div className={`absolute inset-0 opacity-10 transition-opacity duration-500 ${
+      isVisible ? 'opacity-10' : 'opacity-0'
+    }`}>
+      <svg className="w-full h-full" viewBox="0 0 1000 100">
+        <defs>
+          <pattern id="circuit" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
+            <path d="M20,20 L80,20 L80,80 L20,80 Z" fill="none" stroke="currentColor" strokeWidth="1"/>
+            <circle cx="20" cy="20" r="2" fill="currentColor">
+              <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx="80" cy="80" r="2" fill="currentColor">
+              <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+            </circle>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#circuit)" className="text-cyan-400"/>
+      </svg>
+    </div>
+    
+    {/* Bottom scanning line - only when navbar is visible */}
+    <div className={`absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent transition-opacity duration-500 ${
+      isVisible ? 'opacity-100' : 'opacity-0'
+    }`}>
+      <div className="h-full w-20 bg-gradient-to-r from-transparent via-white to-transparent animate-pulse" />
+    </div>
+  </>
+));
+
+BackgroundEffects.displayName = 'BackgroundEffects';
+
+// Main Navbar Component
+const Navbar = () => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const handleMobileMenuToggle = useMemo(
+    () => () => setIsMobileMenuOpen(prev => !prev),
+    []
+  );
+
+  const handleMouseEnter = useMemo(
+    () => () => setIsHovered(true),
+    []
+  );
+
+  const handleMouseLeave = useMemo(
+    () => () => setIsHovered(false),
+    []
+  );
+
+  return (
+    <div className="fixed top-0 left-0 w-full z-50">
+      <BackgroundEffects isVisible={isHovered} />
+      
+      {/* Transparent hover trigger area */}
+      <div 
+        className="absolute top-0 left-0 w-full h-12 z-10 cursor-pointer"
+        onMouseEnter={handleMouseEnter}
+      >
+        <div className={`w-full h-1 bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent animate-pulse transition-opacity duration-300 ${
+          isHovered ? 'opacity-100' : 'opacity-30'
+        }`} />
+      </div>
+      
+      {/* Main Navbar */}
+      <div 
+        className={`transition-all duration-500 ease-out transform ${
+          isHovered 
+            ? 'translate-y-0 opacity-100 scale-100' 
+            : '-translate-y-full opacity-0 scale-95'
+        }`}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <header className="relative bg-gray-900/95 backdrop-blur-xl border-b-2 border-cyan-400/30 shadow-2xl">
+          <div className="relative max-w-7xl mx-auto flex justify-between items-center py-4 px-8">
+            <NavbarLogo />
+            <NavigationLinks />
+            <MobileMenuButton isOpen={isMobileMenuOpen} onToggle={handleMobileMenuToggle} />
+          </div>
+        </header>
+        
+        <MobileMenu isOpen={isMobileMenuOpen} />
+      </div>
+      
+      <ParticleEffect />
+      
+      {/* Particle effects only show when navbar is visible */}
+      {isHovered && <ParticleEffect />}
+      
+      {/* CSS Animation Styles */}
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { 
+            transform: translateY(0px) translateX(0px); 
+            opacity: 0.3; 
+          }
+          50% { 
+            transform: translateY(-20px) translateX(10px); 
+            opacity: 1; 
+          }
         }
-        .animate-pulse-slow {
-          animation: pulse-slow 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        
+        .animate-float {
+          animation: float var(--animation-duration, 4s) infinite ease-in-out;
+          animation-delay: var(--animation-delay, 0s);
         }
       `}</style>
     </div>
   );
-}
+};
+
+export default Navbar;
