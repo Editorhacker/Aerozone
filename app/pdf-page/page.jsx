@@ -97,7 +97,7 @@ export default function ExcelTableConverter() {
         ItemCode: row[8] || "",
         ItemShortDescription: row[10] || "", // instead of 10 use 9
         "OrderedLine Quantity": row[19] || 0, //instead of 19 use 18
-        "On Hand": row[42] || 0,       // New column from column AQ 
+        "Inventory Quantity": row[42] || 0,       // New column from column AQ 
         UOM: row[16] || "", // instead of 16 use 15
         OrderLineValue: row[25] || "", // instead of 25 use 24
         "Inventory Value": calculateInventoryValue(row[25], row[19], row[42]), // ✅ New column
@@ -191,7 +191,7 @@ export default function ExcelTableConverter() {
     const projectData = {};
     data.forEach((row) => {
       const project = row["Project Code"] || "Unknown";
-      const qty = parseFloat(row["On Hand"]) || 0;
+      const qty = parseFloat(row["Inventory Quantity"]) || 0;
       projectData[project] = (projectData[project] || 0) + qty;
     });
     const labels = Object.keys(projectData);
@@ -610,7 +610,7 @@ export default function ExcelTableConverter() {
               <div className="mb-6 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
                 <div className="flex items-center mb-3">
                   <div className="h-5 w-1 bg-emerald-400 mr-2"></div>
-                  <h2 className="text-lg font-semibold text-emerald-100">ON HAND DISTRIBUTION</h2>
+                  <h2 className="text-lg font-semibold text-emerald-100">Inventory Quantity DISTRIBUTION</h2>
                 </div>
                 <div className="h-[10vw] flex justify-center">
                   <canvas ref={onHandChartRef}></canvas>
