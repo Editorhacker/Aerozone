@@ -1,4 +1,4 @@
-vconst admin = require("firebase-admin");
+const admin = require("firebase-admin");
 
 // Parse the service account JSON from environment variable
 const serviceAccount = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
@@ -10,3 +10,4 @@ admin.initializeApp({
 const db = admin.firestore();
 
 module.exports = { db };
+
