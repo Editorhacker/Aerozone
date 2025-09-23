@@ -43,7 +43,7 @@ export default function Preloader({ onLoaded }) {
     >
       <img
         ref={astronautRef}
-        src="./src/assets/astronaut.png"
+        src="/astronaut.png"
         alt="Astronaut"
         className="w-32 md:w-40 mb-6"
       />
@@ -53,3 +53,4 @@ export default function Preloader({ onLoaded }) {
     </div>
   );
 }
+
