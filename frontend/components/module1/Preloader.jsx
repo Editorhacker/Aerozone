@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import astronaut from "../../src/assets/astronaut.png";
 import { gsap } from "gsap";
 
 export default function Preloader({ onLoaded }) {
@@ -43,7 +44,7 @@ export default function Preloader({ onLoaded }) {
     >
       <img
         ref={astronautRef}
-        src="/astronaut.png"
+        src={astronaut}
         alt="Astronaut"
         className="w-32 md:w-40 mb-6"
       />
@@ -53,4 +54,3 @@ export default function Preloader({ onLoaded }) {
     </div>
   );
 }
-
