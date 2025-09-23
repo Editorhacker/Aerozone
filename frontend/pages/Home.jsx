@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Preloader from "../components/module1/Preloader";
+import astronaut from "../src/assets/astronaut.png";
+import earth from "../src/assets/earth.png";
 import { gsap } from "gsap";
 
 export default function Home() {
@@ -44,7 +46,7 @@ export default function Home() {
               {/* Earth at bottom */}
               <img 
                 loading="lazy"
-                src="/earth.png"
+                src={earth}
                 alt="Earth"
                 className="absolute bottom-0 w-full h-full object-cover opacity-80"
               />
@@ -57,7 +59,7 @@ export default function Home() {
               {/* Astronaut */}
               <img
                 ref={astronautRef}
-                src="/astronaut.png"
+                src={astronaut}
                 alt="Astronaut"
                 className="absolute md:w-[450px] w-[400px] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20"
               />
@@ -74,4 +76,3 @@ export default function Home() {
     </>
   );
 }
-
