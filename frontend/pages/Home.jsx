@@ -44,7 +44,7 @@ export default function Home() {
               {/* Earth at bottom */}
               <img 
                 loading="lazy"
-                src="./src/assets/earth.png"
+                src="/earth.png"
                 alt="Earth"
                 className="absolute bottom-0 w-full h-full object-cover opacity-80"
               />
@@ -57,7 +57,7 @@ export default function Home() {
               {/* Astronaut */}
               <img
                 ref={astronautRef}
-                src="./src/assets/astronaut.png"
+                src="/astronaut.png"
                 alt="Astronaut"
                 className="absolute md:w-[450px] w-[400px] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20"
               />
@@ -74,3 +74,4 @@ export default function Home() {
     </>
   );
 }
+
